@@ -1,0 +1,53 @@
+{
+  "name": "mcp-nvidia-nim",
+  "version": "1.0.0",
+  "description": "Servidor MCP (Model Context Protocol) em TypeScript para orquestração de LLMs e modelos multimodais via NVIDIA NIM Cloud API",
+  "main": "dist/index.js",
+  "bin": {
+    "mcp-nvidia-nim": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test \"test/**/*.test.ts\""
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "nvidia",
+    "nvidia-nim",
+    "llm",
+    "nemotron",
+    "mistral",
+    "vision"
+  ],
+  "author": "Luiz Gustavo Dias Pulz <luizgustavodiaspulzoficial@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/luizGDpulz/mcp-nvidia-nim.git"
+  },
+  "bugs": {
+    "url": "https://github.com/luizGDpulz/mcp-nvidia-nim/issues"
+  },
+  "homepage": "https://github.com/luizGDpulz/mcp-nvidia-nim#readme",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "packageManager": "pnpm@12.9.1",
+  "type": "module",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.6.1",
+    "dotenv": "^16.4.7",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.8",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2"
+  }
+}
