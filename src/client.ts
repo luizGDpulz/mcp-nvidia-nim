@@ -1,4 +1,5 @@
 import { SlidingWindowRateLimiter, type RateLimiterStatus } from "./rate-limiter.js";
+import { MetricsCollector, type TelemetrySummary } from "./metrics.js";
 import { resolveModel } from "./models.js";
 import type {
   NimConfig,
@@ -25,6 +26,7 @@ export class NimClient {
   private readonly baseUrl: string;
   private readonly defaultModel: string;
   private readonly rateLimiter: SlidingWindowRateLimiter;
+  private readonly metrics: MetricsCollector;
   private readonly requestTimeoutMs: number;
 
   constructor(config: NimConfig, options?: { requestTimeoutMs?: number }) {
@@ -38,10 +40,15 @@ export class NimClient {
 
     const rpm = config.rateLimitRpm > 0 ? config.rateLimitRpm : 40;
     this.rateLimiter = new SlidingWindowRateLimiter({ maxRequests: rpm, windowMs: 60_000 });
+    this.metrics = new MetricsCollector();
   }
 
   public getRateLimiterStatus(): RateLimiterStatus {
     return this.rateLimiter.getStatus();
+  }
+
+  public getTelemetry(): TelemetrySummary {
+    return this.metrics.getSummary();
   }
 
   public async listModels(): Promise<NimModelsListResponse> {
@@ -69,6 +76,7 @@ export class NimClient {
   ): Promise<ChatCompletionResponse> {
     const model = resolveModel(request.model || this.defaultModel);
     const maxRetries = 3;
+    const startTime = Date.now();
 
     // Normalize messages: if model is vision and user provided string content,
     // NVIDIA endpoints require structure [{ type: "text", text: ... }]
@@ -109,7 +117,9 @@ export class NimClient {
         });
 
         if (response.ok) {
-          return (await response.json()) as ChatCompletionResponse;
+          const result = (await response.json()) as ChatCompletionResponse;
+          this.metrics.recordSuccess(model, Date.now() - startTime, result.usage?.total_tokens);
+          return result;
         }
 
         const errText = await response.text();
@@ -131,11 +141,13 @@ export class NimClient {
           continue;
         }
 
-        throw new NimClientError(
+        const clientError = new NimClientError(
           `NVIDIA NIM API error [${response.status}] for model '${model}': ${typeof parsedError === "string" ? parsedError : JSON.stringify(parsedError)}`,
           response.status,
           parsedError
         );
+        this.metrics.recordFailure(model, Date.now() - startTime, clientError);
+        throw clientError;
       } catch (err: unknown) {
         if (err instanceof NimClientError) {
           throw err;
@@ -145,11 +157,15 @@ export class NimClient {
           await new Promise((resolve) => setTimeout(resolve, 1500 * attempt));
           continue;
         }
-        throw new NimClientError(`NVIDIA NIM communication error: ${(err as Error).message}`);
+        const commError = new NimClientError(`NVIDIA NIM communication error: ${(err as Error).message}`);
+        this.metrics.recordFailure(model, Date.now() - startTime, commError);
+        throw commError;
       }
     }
 
-    throw new NimClientError("Maximum retry attempts exceeded for NIM request.");
+    const maxRetryError = new NimClientError("Maximum retry attempts exceeded for NIM request.");
+    this.metrics.recordFailure(model, Date.now() - startTime, maxRetryError);
+    throw maxRetryError;
   }
 
   public async quickPrompt(

@@ -5,6 +5,10 @@ import { KNOWN_MODELS, MODEL_ALIASES, resolveModel } from "./models.js";
 import { formatTextToolResponse, formatJsonToolResponse, formatToolError, resolveImageInput } from "./utils.js";
 
 export function registerNimTools(server: McpServer, client: NimClient): void {
+  // =========================================================================
+  // Primary Tools (English Naming Standard)
+  // =========================================================================
+
   // 1. General model query
   server.tool(
     "nim_query_model",
@@ -208,21 +212,157 @@ export function registerNimTools(server: McpServer, client: NimClient): void {
   // 6. Server Telemetry & Status
   server.tool(
     "nim_status",
-    "Reports rate limiting status (40 RPM quota), available slots, and supported model catalog and aliases",
+    "Reports rate limiting status (40 RPM quota), available slots, execution telemetry, and supported model catalog and aliases",
     {},
     async () => {
       try {
         const rateLimit = client.getRateLimiterStatus();
+        const telemetry = client.getTelemetry();
         return formatJsonToolResponse({
           rateLimit: {
             ...rateLimit,
             statusDescription: `${rateLimit.currentRpm}/${rateLimit.limit} requests in the last 60s (${rateLimit.availableSlots} slots available)`,
           },
+          telemetry,
           availableAliases: MODEL_ALIASES,
           supportedModels: KNOWN_MODELS,
         });
       } catch (err) {
         return formatToolError("Error fetching status", err);
+      }
+    }
+  );
+
+  // =========================================================================
+  // Backward-Compatible Aliases (Portuguese)
+  // =========================================================================
+
+  server.tool(
+    "nim_consultar_modelo",
+    "Alias para nim_query_model (compatibilidade com versões anteriores)",
+    {
+      prompt: z.string().describe("Mensagem ou pergunta."),
+      modelo: z.string().optional().describe("Nome ou alias do modelo."),
+      system_prompt: z.string().optional().describe("Prompt de sistema."),
+      temperature: z.number().min(0).max(2).optional(),
+      max_tokens: z.number().positive().max(16384).optional(),
+    },
+    async ({ prompt, modelo, system_prompt, temperature, max_tokens }) => {
+      const resolved = resolveModel(modelo);
+      const startTime = Date.now();
+      try {
+        const res = await client.quickPrompt(prompt, {
+          model: resolved,
+          systemPrompt: system_prompt,
+          temperature,
+          maxTokens: max_tokens,
+        });
+        return formatTextToolResponse(`### Resposta NIM [${resolved}] (${Date.now() - startTime}ms):\n\n${res}`);
+      } catch (err) {
+        return formatToolError("Erro ao consultar modelo", err);
+      }
+    }
+  );
+
+  server.tool(
+    "nim_raciocinar_profundo",
+    "Alias para nim_deep_reason (compatibilidade com versões anteriores)",
+    {
+      problema: z.string(),
+      contexto: z.string().optional(),
+      modo: z.enum(["ultra", "fast"]).optional(),
+    },
+    async ({ problema, contexto, modo }) => {
+      const selectedModel = modo === "fast" ? "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning" : "nvidia/nemotron-3-ultra-550b-a55b";
+      const promptText = contexto ? `Contexto:\n${contexto}\n\nProblema:\n${problema}` : problema;
+      const startTime = Date.now();
+      try {
+        const res = await client.quickPrompt(promptText, { model: selectedModel, temperature: 0.1, maxTokens: 4096 });
+        return formatTextToolResponse(`### Parecer NIM [${selectedModel}] (${Date.now() - startTime}ms):\n\n${res}`);
+      } catch (err) {
+        return formatToolError("Erro no raciocínio profundo", err);
+      }
+    }
+  );
+
+  server.tool(
+    "nim_revisar_codigo",
+    "Alias para nim_review_code (compatibilidade com versões anteriores)",
+    {
+      codigo_ou_diff: z.string(),
+      linguagem: z.string().optional(),
+      foco: z.enum(["bugs_e_seguranca", "performance", "arquitetura_e_padroes", "geral"]).optional(),
+      modelo: z.string().optional(),
+    },
+    async ({ codigo_ou_diff, linguagem, foco, modelo }) => {
+      const resolved = resolveModel(modelo || "code");
+      const startTime = Date.now();
+      try {
+        const res = await client.quickPrompt(codigo_ou_diff, {
+          model: resolved,
+          systemPrompt: `Auditor sênior de código (${linguagem || "geral"}). Foco: ${foco || "geral"}.`,
+          temperature: 0.1,
+          maxTokens: 4096,
+        });
+        return formatTextToolResponse(`### Relatório de Auditoria NIM [${resolved}] (${Date.now() - startTime}ms):\n\n${res}`);
+      } catch (err) {
+        return formatToolError("Erro na revisão de código", err);
+      }
+    }
+  );
+
+  server.tool(
+    "nim_analisar_visao",
+    "Alias para nim_analyze_vision (compatibilidade com versões anteriores)",
+    {
+      imagem_url_ou_arquivo: z.string(),
+      pergunta: z.string(),
+      modelo: z.string().optional(),
+    },
+    async ({ imagem_url_ou_arquivo, pergunta, modelo }) => {
+      const resolved = resolveModel(modelo || "vision");
+      const startTime = Date.now();
+      try {
+        const resolvedImage = await resolveImageInput(imagem_url_ou_arquivo);
+        const response = await client.chatCompletion({
+          model: resolved,
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: pergunta },
+                { type: "image_url", image_url: { url: resolvedImage } },
+              ],
+            },
+          ],
+        });
+        const res = response.choices?.[0]?.message?.content || "";
+        return formatTextToolResponse(`### Análise Visual NIM [${resolved}] (${Date.now() - startTime}ms):\n\n${res}`);
+      } catch (err) {
+        return formatToolError("Erro na análise visual", err);
+      }
+    }
+  );
+
+  server.tool(
+    "nim_extrair_documento",
+    "Alias para nim_extract_document (compatibilidade com versões anteriores)",
+    {
+      conteudo_bruto: z.string(),
+      formato_desejado: z.enum(["markdown", "json", "tabela"]).optional(),
+    },
+    async ({ conteudo_bruto, formato_desejado }) => {
+      const resolved = resolveModel("parse");
+      const startTime = Date.now();
+      try {
+        const res = await client.quickPrompt(conteudo_bruto, {
+          model: resolved,
+          systemPrompt: `Extraia e estruture em formato ${formato_desejado || "markdown"}.`,
+          maxTokens: 4096,
+        });
+        return formatTextToolResponse(`### Documento Estruturado [${resolved}] (${Date.now() - startTime}ms):\n\n${res}`);
+      } catch (err) {
+        return formatToolError("Erro na extração de documento", err);
       }
     }
   );
