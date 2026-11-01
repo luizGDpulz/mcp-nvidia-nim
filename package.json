@@ -36,6 +36,7 @@
   "files": [
     "dist",
     "README.md",
+    "README.pt-BR.md",
     "LICENSE"
   ],
   "packageManager": "pnpm@12.9.1",

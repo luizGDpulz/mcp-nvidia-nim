@@ -1,6 +1,10 @@
 # mcp-nvidia-nim
 
-> Servidor **MCP (Model Context Protocol)** em TypeScript para orquestração de Modelos de Linguagem (LLMs), Raciocínio Profundo, Visão Computacional e Engenharia de Código via **NVIDIA NIM Cloud API**.
+> TypeScript **MCP (Model Context Protocol)** server for orchestrating Large Language Models (LLMs), Deep Reasoning, Multimodal Vision, and Code Engineering via the **NVIDIA NIM Cloud API**.
+
+<p align="center">
+  <strong>English</strong> | <a href="README.pt-BR.md">Português</a>
+</p>
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue.svg)](https://www.typescriptlang.org/)
 [![pnpm](https://img.shields.io/badge/pnpm-12.9-orange.svg)](https://pnpm.io/)
@@ -9,88 +13,88 @@
 
 ---
 
-## 🎯 Visão Geral
+## 🎯 Overview
 
-O **`mcp-nvidia-nim`** integra assistentes de IA (Google Antigravity, Claude Desktop, Cursor, Roo-Code, etc.) ao catálogo oficial da **NVIDIA NIM**, permitindo consultar modelos de ponta com controle de taxa integrado de **40 RPM (Rate Limit da conta gratuita)**, resolução inteligente de aliases e suporte nativo a imagens locais/remotas.
+**`mcp-nvidia-nim`** connects AI assistants and agents (Google Antigravity, Claude Desktop, Cursor, Roo-Code, etc.) directly to the official **NVIDIA NIM** cloud catalog. It features built-in **40 RPM sliding-window rate limiting** (matching NVIDIA's free tier quota), intelligent model alias resolution, and seamless support for local and remote image inputs.
 
-### 🌟 Destaques de Modelos Homologados
-- 🧠 **Raciocínio & Arquitetura Ultra:** `nvidia/nemotron-3-ultra-550b-a55b` (550 bilhões de parâmetros) e `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`.
-- 💻 **Engenharia de Código:** `poolside/laguna-xs-2.1` (modelo da Poolside especialista em código) e `mistralai/mistral-large-4-1t-a52b`.
-- 👁️ **Visão Multimodal de Grande Porte:** `meta/llama-3.2-90b-vision-instruct` e `nvidia/nemotron-3.5-super-vl-120b-a12b`.
-- ⚡ **Alta Velocidade & Baixa Latência:** `nvidia/nemotron-3.5-lightning-30b-a3b` e `minimaxai/minimax-m3.1-flash`.
-- 📄 **Extração e Parsing de Documentos:** `nvidia/nemotron-parse-2.0` (OCR e estruturação de tabelas/PDFs).
-- 🌐 **Tradução Especializada:** `nvidia/riva-translate-4b-instruct-v2`.
+### 🌟 Verified Model Highlights
+- 🧠 **Ultra-Scale Reasoning & Architecture:** `nvidia/nemotron-3-ultra-550b-a55b` (550 billion parameters) and `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`.
+- 💻 **Software Engineering & Code Review:** `poolside/laguna-xs-2.1` (Poolside's code specialist model) and `mistralai/mistral-large-4-1t-a52b`.
+- 👁️ **Large-Scale Multimodal Vision:** `meta/llama-3.2-90b-vision-instruct` and `nvidia/nemotron-3.5-super-vl-120b-a12b`.
+- ⚡ **High Throughput & Low Latency:** `nvidia/nemotron-3.5-lightning-30b-a3b` and `minimaxai/minimax-m3.1-flash`.
+- 📄 **Document & Data Extraction:** `nvidia/nemotron-parse-2.0` (OCR, table, and markdown parser).
+- 🌐 **Technical Multilingual Translation:** `nvidia/riva-translate-4b-instruct-v2`.
 
 ---
 
-## 🛠️ Ferramentas MCP Disponíveis
+## 🛠️ MCP Tools Reference
 
-| Ferramenta | Descrição | Modelo Padrão / Alias |
+| Tool Name | Description | Default Model / Alias |
 | :--- | :--- | :--- |
-| `nim_consultar_modelo` | Consulta direta a qualquer modelo da NVIDIA NIM | `mistral` / Customizável |
-| `nim_raciocinar_profundo` | Parecer arquitetural, lógica matemática e tradeoffs | `nemotron-ultra` (550B) ou `reasoning` |
-| `nim_revisar_codigo` | Auditoria de código, segurança, bugs e performance | `code` (`poolside/laguna-xs-2.1`) |
-| `nim_analisar_visao` | Inspeção de diagramas, prints e wireframes | `vision` (`meta/llama-3.2-90b-vision-instruct`) |
-| `nim_extrair_documento` | Estruturação de dados brutos e OCR em markdown/json | `parse` (`nvidia/nemotron-parse-2.0`) |
-| `nim_status` | Status da cota de 40 RPM e catálogo de modelos | — |
+| `nim_query_model` | Direct prompt query against any NVIDIA NIM model | `mistral` / Customizable |
+| `nim_deep_reason` | In-depth architectural advisory, logic, and tradeoffs | `nemotron-ultra` (550B) or `reasoning` |
+| `nim_review_code` | Technical code and git diff review (security, bugs, performance) | `code` (`poolside/laguna-xs-2.1`) |
+| `nim_analyze_vision` | Multimodal visual inspection for diagrams, wireframes, and screenshots | `vision` (`meta/llama-3.2-90b-vision-instruct`) |
+| `nim_extract_document` | Semantic extraction and formatting into markdown, json, or table | `parse` (`nvidia/nemotron-parse-2.0`) |
+| `nim_status` | Real-time rate limiter telemetry (40 RPM window) and model catalog | — |
 
 ---
 
-## 🚀 Instalação e Execução
+## 🚀 Getting Started
 
-### 1. Pré-requisitos
-- **Node.js** `>= 20.x` (testado no Node 24)
+### 1. Prerequisites
+- **Node.js** `>= 20.x` (tested on Node 24)
 - **pnpm** `>= 10.x`
-- Chave de API da NVIDIA NIM (`nvapi-...` obtida em [build.nvidia.com](https://build.nvidia.com))
+- NVIDIA NIM API Key (`nvapi-...` from [build.nvidia.com](https://build.nvidia.com))
 
-### 2. Configuração do Projeto
+### 2. Installation & Setup
 
 ```bash
 git clone https://github.com/luizGDpulz/mcp-nvidia-nim.git
 cd mcp-nvidia-nim
 
-# Instalar dependências
+# Install dependencies
 pnpm install
 
-# Configurar variáveis de ambiente
+# Configure environment variables
 cp .env.example .env
 chmod 600 .env
-# Edite o .env e insira sua NVIDIA_API_KEY
+# Edit .env and paste your NVIDIA_API_KEY
 ```
 
-### 3. Compilação e Testes
+### 3. Build & Test
 
 ```bash
-# Compilar TypeScript
+# Compile TypeScript to dist/
 pnpm build
 
-# Executar suíte de testes unitários
+# Run unit test suite
 pnpm test
 ```
 
 ---
 
-## ⚙️ Variáveis de Ambiente (`.env`)
+## ⚙️ Environment Configuration (`.env`)
 
 ```env
-# Chave da API NVIDIA NIM
+# NVIDIA NIM API Key
 NVIDIA_API_KEY=nvapi-your-key-here
 
-# Base URL (padrão oficial)
+# Base URL (official endpoint)
 NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1
 
-# Limite de taxa (40 RPM padrão para conta free)
+# Rate limit per minute (standard free tier is 40 RPM)
 NVIDIA_RATE_LIMIT_RPM=40
 
-# Modelo padrão para consultas simples
+# Default model for standard queries
 NVIDIA_DEFAULT_MODEL=mistralai/mistral-large-4-1t-a52b
 ```
 
 ---
 
-## 🔌 Integração Global (Ex: Antigravity / Claude Desktop)
+## 🔌 MCP Client Configuration (e.g. Antigravity / Claude Desktop)
 
-Adicione ao seu arquivo de configuração MCP (`~/.gemini/config/mcp_config.json` ou `claude_desktop_config.json`):
+Add the server to your MCP configuration file (`~/.gemini/config/mcp_config.json` or `claude_desktop_config.json`):
 
 ```json
 {
@@ -107,9 +111,9 @@ Adicione ao seu arquivo de configuração MCP (`~/.gemini/config/mcp_config.json
 
 ---
 
-## 🏷️ Aliases Práticos
+## 🏷️ Model Aliases
 
-Ao usar a ferramenta `nim_consultar_modelo`, você pode passar diretamente o alias no parâmetro `modelo`:
+When calling `nim_query_model`, you can pass handy shorthand aliases in the `model` parameter:
 
 - `ultra` $\rightarrow$ `nvidia/nemotron-3-ultra-550b-a55b`
 - `reasoning` $\rightarrow$ `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`
@@ -125,15 +129,15 @@ Ao usar a ferramenta `nim_consultar_modelo`, você pode passar diretamente o ali
 
 ---
 
-## 🛡️ Rate Limiting Inteligente (Sliding Window 40 RPM)
+## 🛡️ Sliding Window Rate Limiting (40 RPM)
 
-O servidor implementa um limitador de janela deslizante em memória:
-- Registra os timestamps de cada requisição nos últimos 60 segundos.
-- Caso o limite de 40 requisições seja atingido, a próxima chamada aguarda automaticamente a liberação do slot mais antigo com backoff suave.
-- Trata respostas `429 Too Many Requests` com retentativas exponenciais automáticas.
+The server enforces an in-memory sliding window rate limiter:
+- Records request timestamps over a continuous 60-second window.
+- If the 40 requests/min threshold is reached, subsequent requests automatically sleep and wait for the earliest slot to expire before executing.
+- Gracefully handles upstream `429 Too Many Requests` status codes with exponential backoff and retry.
 
 ---
 
-## 📄 Licença
+## 📄 License
 
-Distribuído sob a licença [MIT](LICENSE).
+Distributed under the [MIT](LICENSE) License.
