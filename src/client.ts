@@ -29,7 +29,7 @@ export class NimClient {
 
   constructor(config: NimConfig, options?: { requestTimeoutMs?: number }) {
     if (!config.apiKey || config.apiKey.trim() === "") {
-      throw new NimClientError("NVIDIA API key é obrigatória.");
+      throw new NimClientError("NVIDIA API key is required.");
     }
     this.apiKey = config.apiKey.trim();
     this.baseUrl = (config.baseUrl || "https://integrate.api.nvidia.com/v1").replace(/\/+$/, "");
@@ -58,7 +58,7 @@ export class NimClient {
 
     if (!response.ok) {
       const errText = await response.text();
-      throw new NimClientError(`Falha ao listar modelos (${response.status}): ${errText}`, response.status);
+      throw new NimClientError(`Failed to list models (${response.status}): ${errText}`, response.status);
     }
 
     return (await response.json()) as NimModelsListResponse;
@@ -70,8 +70,8 @@ export class NimClient {
     const model = resolveModel(request.model || this.defaultModel);
     const maxRetries = 3;
 
-    // Normaliza mensagens: se o modelo for multimodal/vision e o usuário passou texto puro,
-    // alguns endpoints da NVIDIA exigem estrutura [{ type: "text", text: ... }]
+    // Normalize messages: if model is vision and user provided string content,
+    // NVIDIA endpoints require structure [{ type: "text", text: ... }]
     const normalizedMessages: ChatMessage[] = request.messages.map((msg) => {
       if (typeof msg.content === "string" && model.includes("vision")) {
         return {
@@ -117,10 +117,10 @@ export class NimClient {
         try {
           parsedError = JSON.parse(errText);
         } catch {
-          // Mantém string original
+          // Keep raw string
         }
 
-        // Se bater no 429 (Rate Limit na NVIDIA), tenta backoff
+        // Retry on 429 Too Many Requests with exponential backoff
         if (response.status === 429 && attempt < maxRetries) {
           attempt++;
           const retryAfterHeader = response.headers.get("retry-after");
@@ -132,7 +132,7 @@ export class NimClient {
         }
 
         throw new NimClientError(
-          `Erro na API NVIDIA NIM [${response.status}] para modelo '${model}': ${typeof parsedError === "string" ? parsedError : JSON.stringify(parsedError)}`,
+          `NVIDIA NIM API error [${response.status}] for model '${model}': ${typeof parsedError === "string" ? parsedError : JSON.stringify(parsedError)}`,
           response.status,
           parsedError
         );
@@ -145,11 +145,11 @@ export class NimClient {
           await new Promise((resolve) => setTimeout(resolve, 1500 * attempt));
           continue;
         }
-        throw new NimClientError(`Erro de comunicação com NVIDIA NIM: ${(err as Error).message}`);
+        throw new NimClientError(`NVIDIA NIM communication error: ${(err as Error).message}`);
       }
     }
 
-    throw new NimClientError("Número máximo de tentativas excedido para requisição NIM.");
+    throw new NimClientError("Maximum retry attempts exceeded for NIM request.");
   }
 
   public async quickPrompt(
@@ -176,7 +176,7 @@ export class NimClient {
 
     const choice = response.choices?.[0];
     if (!choice || !choice.message?.content) {
-      throw new NimClientError("NVIDIA NIM retornou resposta vazia.");
+      throw new NimClientError("NVIDIA NIM returned an empty response.");
     }
 
     return choice.message.content;

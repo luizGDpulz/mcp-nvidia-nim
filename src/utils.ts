@@ -39,17 +39,17 @@ export function formatToolError(prefix: string, err: unknown) {
 export async function resolveImageInput(input: string): Promise<string> {
   const trimmed = input.trim();
 
-  // Se já for URL HTTP ou Data URI base64
+  // If already an HTTP/HTTPS URL or Data URI base64
   if (trimmed.startsWith("http://") || trimmed.startsWith("https://") || trimmed.startsWith("data:image/")) {
     return trimmed;
   }
 
-  // Verifica se é um arquivo local existente
+  // Check if it's an existing local file
   try {
     const resolvedPath = path.resolve(trimmed);
     const stat = await fs.stat(resolvedPath);
     if (!stat.isFile()) {
-      throw new Error(`Caminho não é um arquivo válido: ${trimmed}`);
+      throw new Error(`Path is not a valid file: ${trimmed}`);
     }
 
     const ext = path.extname(resolvedPath).toLowerCase().replace(".", "");
@@ -66,6 +66,6 @@ export async function resolveImageInput(input: string): Promise<string> {
     const base64 = buffer.toString("base64");
     return `data:${mime};base64,${base64}`;
   } catch (err) {
-    throw new Error(`Não foi possível carregar a imagem informada ('${trimmed}'): ${(err as Error).message}`);
+    throw new Error(`Could not load specified image ('${trimmed}'): ${(err as Error).message}`);
   }
 }

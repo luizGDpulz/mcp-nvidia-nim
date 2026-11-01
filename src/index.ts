@@ -7,7 +7,7 @@ import dotenv from "dotenv";
 import { NimClient } from "./client.js";
 import { registerNimTools } from "./tools.js";
 
-// Carrega variáveis de ambiente do .env da raiz do projeto ou diretório corrente
+// Load environment variables from .env in project root or current working dir
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, "../.env") });
 dotenv.config();
@@ -15,7 +15,7 @@ dotenv.config();
 const apiKey = process.env.NVIDIA_API_KEY;
 if (!apiKey) {
   console.error(
-    "ERRO CRÍTICO: Variável NVIDIA_API_KEY não foi encontrada no ambiente ou arquivo .env. Obtenha sua chave em https://build.nvidia.com"
+    "CRITICAL ERROR: NVIDIA_API_KEY environment variable is missing. Obtain your key at https://build.nvidia.com"
   );
   process.exit(1);
 }
@@ -42,11 +42,11 @@ async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error(
-    `[mcp-nvidia-nim] Servidor MCP iniciado via Stdio (NVIDIA NIM Base: ${baseUrl}, RateLimit: ${rateLimitRpm} RPM, Default: ${defaultModel})`
+    `[mcp-nvidia-nim] MCP Server started via Stdio (NVIDIA NIM Base: ${baseUrl}, RateLimit: ${rateLimitRpm} RPM, Default: ${defaultModel})`
   );
 }
 
 main().catch((err) => {
-  console.error("[mcp-nvidia-nim] Erro fatal na inicialização:", err);
+  console.error("[mcp-nvidia-nim] Fatal startup error:", err);
   process.exit(1);
 });
