@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { NimClient, NimClientError } from "../src/client.js";
+import { NimClient } from "../src/client.js";
 
-test("NimClient: deve falhar ao instanciar sem API Key", () => {
+test("NimClient: should throw error when initialized without API key", () => {
   assert.throws(
     () => {
       new NimClient({
@@ -14,12 +14,12 @@ test("NimClient: deve falhar ao instanciar sem API Key", () => {
     },
     {
       name: "NimClientError",
-      message: "NVIDIA API key é obrigatória.",
+      message: "NVIDIA API key is required.",
     }
   );
 });
 
-test("NimClient: deve inicializar corretamente com rate limiter", () => {
+test("NimClient: should initialize properly with rate limiter", () => {
   const client = new NimClient({
     apiKey: "nvapi-test-dummy",
     baseUrl: "https://integrate.api.nvidia.com/v1",

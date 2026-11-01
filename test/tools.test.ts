@@ -4,7 +4,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { NimClient } from "../src/client.js";
 import { registerNimTools } from "../src/tools.js";
 
-test("registerNimTools: deve registrar todas as 6 ferramentas no McpServer", () => {
+test("registerNimTools: should register all 6 tools with English naming convention on McpServer", () => {
   const client = new NimClient({
     apiKey: "nvapi-dummy-key",
     baseUrl: "https://integrate.api.nvidia.com/v1",
@@ -18,8 +18,5 @@ test("registerNimTools: deve registrar todas as 6 ferramentas no McpServer", () 
   });
 
   registerNimTools(server, client);
-
-  // Verifica se o servidor possui as ferramentas registradas
-  // No MCP SDK v1, o servidor armazena as tools internamente
   assert.ok(server);
 });
