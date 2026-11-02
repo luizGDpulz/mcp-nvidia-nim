@@ -62,14 +62,15 @@ When a fallback triggers, the response seamlessly includes an advisory notice in
 
 ---
 
-## 🏥 Proactive Health Check & Quota Guardrails (`nim_health_check`)
+## 🏥 On-Demand Health Diagnostics & Quota Guardrails (`nim_health_check`)
 
-You can run diagnostic health probes at any time via the MCP tool `nim_health_check`. To protect your 40 RPM quota from being starved by synthetic tests, the server includes built-in protection guardrails:
+Model health checks are designed to be **strictly reactive and on-demand**, ensuring that the 40 RPM quota is dedicated exclusively to productive coding and analysis tasks:
 
+- **Strictly Reactive Trigger:** AI agents never run health checks proactively or on periodic routines. Diagnostic probes are executed only when a fallback chain fails or when you explicitly ask the agent to test endpoint health.
 - **Quota Reservation Floor (`NVIDIA_MIN_RPM_RESERVE=15`):** Probes automatically yield if available slots drop below 15 in the current 60s sliding window. Active agent queries always take strict priority over diagnostics.
 - **TTL Cache (`NVIDIA_HEALTHCHECK_CACHE_TTL_MS=600000`):** Health reports are cached for 10 minutes. Repeated calls return instantaneous cached results with zero RPM cost.
 - **Passive Health Telemetry (0 RPM Cost):** Every regular model invocation (`nim_query_model`, `nim_deep_reason`, `nim_review_code`, etc.) passively updates model status in the health cache in real-time.
-- **Selective Probing:** Default probes evaluate 4 core anchor models rather than the entire 15+ catalog, keeping quota footprint under 10%.
+- **Selective Probing:** Targeted probes can evaluate individual models (`models: ["poolside/laguna-xs-2.1"]`) or the 4 core anchor models, minimizing quota footprint.
 - **Manual Force Override:** Call `nim_health_check(force: true)` to bypass cache and safety floor when an immediate live diagnostic is required.
 - **Disable Toggle:** Set `NVIDIA_HEALTHCHECK_ENABLED=false` to completely disable synthetic background probes.
 
