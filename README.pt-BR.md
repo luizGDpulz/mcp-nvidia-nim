@@ -62,15 +62,21 @@ Quando um fallback é acionado, a resposta traz automaticamente uma nota informa
 
 ---
 
-## 🏥 Diagnóstico Proativo (`nim_health_check`)
+## 🏥 Diagnóstico Proativo e Guardrails de Quota (`nim_health_check`)
 
-Você pode rodar varreduras de saúde dos modelos a qualquer momento via MCP:
-- Executa probes leves de 1 token respeitando a fila de rate limit.
-- Avalia status HTTP, autenticação e latência de ida e volta.
-- Classifica cada modelo em:
-  - 🟢 **Healthy** (latência $< 3000\text{ms}$, HTTP 200)
-  - 🟡 **Degraded** (latência $\ge 3000\text{ms}$, HTTP 200)
-  - 🔴 **Unavailable** (HTTP 404, 403, 500 ou timeout)
+Você pode rodar varreduras de saúde dos modelos a qualquer momento via MCP (`nim_health_check`). Para proteger sua quota de 40 RPM de ser esgotada por testes sintéticos, o servidor possui guardrails de proteção integrados:
+
+- **Piso de Reserva de Quota (`NVIDIA_MIN_RPM_RESERVE=15`):** Probes sintéticos cedem automaticamente a vez caso os slots disponíveis caiam abaixo de 15 na janela de 60 segundos. Requisições de trabalho real têm prioridade absoluta.
+- **Cache com TTL (`NVIDIA_HEALTHCHECK_CACHE_TTL_MS=600000`):** Relatórios de saúde são cacheados por 10 minutos (padrão). Consultas repetidas retornam instantaneamente do cache sem gastar requisições.
+- **Telemetria Passiva de Saúde (Custo 0 de RPM):** Cada chamada real aos modelos (`nim_query_model`, `nim_deep_reason`, `nim_review_code`, etc.) atualiza passivamente a saúde dos modelos no cache em tempo real.
+- **Varredura Essencial:** Por padrão testa 4 modelos âncora essenciais ao invés do catálogo inteiro de 15+ modelos, mantendo o consumo abaixo de 10% do limite.
+- **Bypass Manual Forçado:** Chamar `nim_health_check(force: true)` ignora o cache e o piso de reserva para um diagnóstico imediato ao vivo.
+- **Chave Geral:** Configure `NVIDIA_HEALTHCHECK_ENABLED=false` para desligar totalmente os probes sintéticos.
+
+### Classificação de Status:
+- 🟢 **Healthy** (latência $< 3000\text{ms}$, HTTP 200)
+- 🟡 **Degraded** (latência $\ge 3000\text{ms}$, HTTP 200)
+- 🔴 **Unavailable** (HTTP 404, 403, 500 ou timeout)
 
 ---
 
@@ -122,6 +128,11 @@ NVIDIA_RATE_LIMIT_RPM=40
 
 # Modelo padrão para consultas simples
 NVIDIA_DEFAULT_MODEL=mistralai/mistral-large-4-1t-a52b
+
+# Proteção de Quota & Telemetria
+NVIDIA_HEALTHCHECK_ENABLED=true
+NVIDIA_MIN_RPM_RESERVE=15
+NVIDIA_HEALTHCHECK_CACHE_TTL_MS=600000
 ```
 
 ---

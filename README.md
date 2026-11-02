@@ -62,15 +62,21 @@ When a fallback triggers, the response seamlessly includes an advisory notice in
 
 ---
 
-## 🏥 Proactive Health Check (`nim_health_check`)
+## 🏥 Proactive Health Check & Quota Guardrails (`nim_health_check`)
 
-You can run diagnostic health probes at any time via the MCP tool `nim_health_check`:
-- Fires lightweight 1-token probes respecting rate limits.
-- Evaluates HTTP status code, entitlement, and roundtrip latency.
-- Categorizes each model as:
-  - 🟢 **Healthy** (latency $< 3000\text{ms}$, HTTP 200)
-  - 🟡 **Degraded** (latency $\ge 3000\text{ms}$, HTTP 200)
-  - 🔴 **Unavailable** (HTTP 404, 403, 500, or timeout)
+You can run diagnostic health probes at any time via the MCP tool `nim_health_check`. To protect your 40 RPM quota from being starved by synthetic tests, the server includes built-in protection guardrails:
+
+- **Quota Reservation Floor (`NVIDIA_MIN_RPM_RESERVE=15`):** Probes automatically yield if available slots drop below 15 in the current 60s sliding window. Active agent queries always take strict priority over diagnostics.
+- **TTL Cache (`NVIDIA_HEALTHCHECK_CACHE_TTL_MS=600000`):** Health reports are cached for 10 minutes. Repeated calls return instantaneous cached results with zero RPM cost.
+- **Passive Health Telemetry (0 RPM Cost):** Every regular model invocation (`nim_query_model`, `nim_deep_reason`, `nim_review_code`, etc.) passively updates model status in the health cache in real-time.
+- **Selective Probing:** Default probes evaluate 4 core anchor models rather than the entire 15+ catalog, keeping quota footprint under 10%.
+- **Manual Force Override:** Call `nim_health_check(force: true)` to bypass cache and safety floor when an immediate live diagnostic is required.
+- **Disable Toggle:** Set `NVIDIA_HEALTHCHECK_ENABLED=false` to completely disable synthetic background probes.
+
+### Status Categorization:
+- 🟢 **Healthy** (latency $< 3000\text{ms}$, HTTP 200)
+- 🟡 **Degraded** (latency $\ge 3000\text{ms}$, HTTP 200)
+- 🔴 **Unavailable** (HTTP 404, 403, 500, or timeout)
 
 ---
 
@@ -122,6 +128,11 @@ NVIDIA_RATE_LIMIT_RPM=40
 
 # Default model for standard queries
 NVIDIA_DEFAULT_MODEL=mistralai/mistral-large-4-1t-a52b
+
+# Quota Guardrails & Telemetry Protection
+NVIDIA_HEALTHCHECK_ENABLED=true
+NVIDIA_MIN_RPM_RESERVE=15
+NVIDIA_HEALTHCHECK_CACHE_TTL_MS=600000
 ```
 
 ---
