@@ -278,7 +278,10 @@ export class NimClient {
       }
     }
 
-    throw lastError || new NimClientError("All models in the fallback chain failed.");
+    const attemptSummary = attempts.map((a) => `'${a.model}': ${a.error}`).join(" | ");
+    throw new NimClientError(
+      `All models in the fallback chain failed (${attemptSummary}). Run 'nim_health_check' for on-demand diagnostics.`
+    );
   }
 
   public async quickPrompt(

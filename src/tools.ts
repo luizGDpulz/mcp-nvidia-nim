@@ -237,10 +237,10 @@ export function registerNimTools(server: McpServer, client: NimClient): void {
     }
   );
 
-  // 6. Proactive Catalog Health Check
+  // 6. On-Demand Catalog Health Check
   server.tool(
     "nim_health_check",
-    "Runs diagnostic ping probes across homologated NVIDIA NIM models to detect entitlement changes, deprecations, or latency degradation",
+    "On-demand diagnostic ping probe across NVIDIA NIM models. Recommended only when a fallback chain fails or upon explicit user request.",
     {
       models: z
         .array(z.string())
@@ -325,7 +325,7 @@ export function registerNimTools(server: McpServer, client: NimClient): void {
 
   server.tool(
     "nim_verificar_saude",
-    "Alias para nim_health_check (compatibilidade com versões anteriores)",
+    "Diagnóstico sob demanda de modelos NVIDIA NIM. Usado quando um fallback falha ou mediante solicitação explícita do usuário.",
     {
       modelos: z.array(z.string()).optional(),
       forcar: z.boolean().optional().describe("Forçar teste em tempo real ignorando cache e reserva de quota. Padrão: false."),

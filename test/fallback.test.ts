@@ -113,3 +113,43 @@ test("NimClient: probeModel should report healthy on 200 and unavailable on 404"
     globalThis.fetch = originalFetch;
   }
 });
+
+test("NimClient: should throw actionable error with model failure summary when entire fallback chain fails", async () => {
+  const client = new NimClient({
+    apiKey: "nvapi-test-key",
+    baseUrl: "https://integrate.api.nvidia.com/v1",
+    rateLimitRpm: 40,
+    defaultModel: "mistral",
+  });
+
+  const originalFetch = globalThis.fetch;
+
+  // Mock global fetch so all models return 500 error
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const body = JSON.parse((init?.body as string) || "{}");
+    return new Response(JSON.stringify({ detail: `Internal error on ${body.model}` }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
+  }) as typeof fetch;
+
+  try {
+    await assert.rejects(
+      async () => {
+        await client.chatCompletionWithFallback({
+          model: "code",
+          messages: [{ role: "user", content: "test failure" }],
+        });
+      },
+      (err: Error) => {
+        assert.ok(err.message.includes("All models in the fallback chain failed"));
+        assert.ok(err.message.includes("poolside/laguna-xs-2.1"));
+        assert.ok(err.message.includes("mistralai/mistral-large-4-1t-a52b"));
+        assert.ok(err.message.includes("Run 'nim_health_check' for on-demand diagnostics"));
+        return true;
+      }
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
