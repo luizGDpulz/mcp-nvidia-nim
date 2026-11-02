@@ -143,6 +143,60 @@ export const MODEL_ALIASES: Record<string, string> = {
   diffusion: "google/diffusiongemma-26b-a4b-it",
 };
 
+/**
+ * Ordered fallback redundancy chains per model ID.
+ * If the primary model fails with an unrecoverable error (e.g. 404 decommissioned, 403, 410),
+ * the client gracefully fails over to the next model in the chain.
+ */
+export const MODEL_FALLBACK_CHAINS: Record<string, string[]> = {
+  // Code engineering fallback: Poolside Laguna -> Mistral Large 4
+  "poolside/laguna-xs-2.1": [
+    "mistralai/mistral-large-4-1t-a52b",
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+  ],
+
+  // Ultra reasoning fallback: Nemotron Ultra 550B -> Omni Reasoning 30B -> Mistral Large 4
+  "nvidia/nemotron-3-ultra-550b-a55b": [
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+    "mistralai/mistral-large-4-1t-a52b",
+  ],
+
+  // Fast reasoning fallback: Omni Reasoning 30B -> Mistral Large 4 -> Nemotron Ultra
+  "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning": [
+    "mistralai/mistral-large-4-1t-a52b",
+    "nvidia/nemotron-3-ultra-550b-a55b",
+  ],
+
+  // Vision fallback: Llama 3.2 90B Vision -> Nemotron Super VL 120B
+  "meta/llama-3.2-90b-vision-instruct": [
+    "nvidia/nemotron-3.5-super-vl-120b-a12b",
+  ],
+  "nvidia/nemotron-3.5-super-vl-120b-a12b": [
+    "meta/llama-3.2-90b-vision-instruct",
+  ],
+
+  // Speed fallback: Lightning 30B -> MiniMax Flash -> Mistral Large
+  "nvidia/nemotron-3.5-lightning-30b-a3b": [
+    "minimaxai/minimax-m3.1-flash",
+    "mistralai/mistral-large-4-1t-a52b",
+  ],
+  "minimaxai/minimax-m3.1-flash": [
+    "nvidia/nemotron-3.5-lightning-30b-a3b",
+    "mistralai/mistral-large-4-1t-a52b",
+  ],
+
+  // Parsing fallback: Nemotron Parse 2.0 -> Mistral Large 4
+  "nvidia/nemotron-parse-2.0": [
+    "mistralai/mistral-large-4-1t-a52b",
+  ],
+
+  // Mistral Large fallback: Mistral Large -> Omni Reasoning 30B
+  "mistralai/mistral-large-4-1t-a52b": [
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+    "nvidia/nemotron-3-ultra-550b-a55b",
+  ],
+};
+
 export function resolveModel(nameOrAlias?: string): string {
   if (!nameOrAlias || nameOrAlias.trim() === "") {
     return MODEL_ALIASES.default;
@@ -152,4 +206,14 @@ export function resolveModel(nameOrAlias?: string): string {
     return MODEL_ALIASES[clean];
   }
   return nameOrAlias.trim();
+}
+
+/**
+ * Returns the candidate chain for a requested model or alias: [primaryModel, ...fallbacks]
+ */
+export function getModelFallbackChain(nameOrAlias?: string): string[] {
+  const primary = resolveModel(nameOrAlias);
+  const fallbacks = MODEL_FALLBACK_CHAINS[primary] || [];
+  // Ensure primary is first and remove any duplicate entries
+  return Array.from(new Set([primary, ...fallbacks]));
 }

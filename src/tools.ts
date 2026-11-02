@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { NimClient } from "./client.js";
-import { KNOWN_MODELS, MODEL_ALIASES, resolveModel } from "./models.js";
+import { KNOWN_MODELS, MODEL_ALIASES, MODEL_FALLBACK_CHAINS, resolveModel } from "./models.js";
 import { formatTextToolResponse, formatJsonToolResponse, formatToolError, resolveImageInput } from "./utils.js";
 
 export function registerNimTools(server: McpServer, client: NimClient): void {
@@ -9,10 +9,10 @@ export function registerNimTools(server: McpServer, client: NimClient): void {
   // Primary Tools (English Naming Standard)
   // =========================================================================
 
-  // 1. General model query
+  // 1. General model query with fallback
   server.tool(
     "nim_query_model",
-    "Executes a direct prompt query against any NVIDIA NIM model (e.g. Nemotron Ultra 550B, Mistral Large, MiniMax Flash, etc.)",
+    "Executes a direct prompt query against any NVIDIA NIM model (e.g. Nemotron Ultra 550B, Mistral Large, MiniMax Flash, etc.) with automatic fallback failover",
     {
       prompt: z.string().describe("User prompt or instruction to send to the model."),
       model: z
@@ -24,8 +24,9 @@ export function registerNimTools(server: McpServer, client: NimClient): void {
       system_prompt: z.string().optional().describe("Optional system prompt with behavioral guidelines or persona."),
       temperature: z.number().min(0).max(2).optional().describe("Sampling temperature (0.0 = deterministic, 1.0+ = creative). Default: 0.2."),
       max_tokens: z.number().positive().max(16384).optional().describe("Maximum completion tokens. Default: 2048."),
+      enable_fallback: z.boolean().optional().describe("Whether to automatically try fallback models if primary model fails. Default: true."),
     },
-    async ({ prompt, model, system_prompt, temperature, max_tokens }) => {
+    async ({ prompt, model, system_prompt, temperature, max_tokens, enable_fallback }) => {
       try {
         const resolved = resolveModel(model);
         const startTime = Date.now();
@@ -34,6 +35,7 @@ export function registerNimTools(server: McpServer, client: NimClient): void {
           systemPrompt: system_prompt,
           temperature,
           maxTokens: max_tokens,
+          enableFallback: enable_fallback ?? true,
         });
         const elapsedMs = Date.now() - startTime;
 
@@ -49,7 +51,7 @@ export function registerNimTools(server: McpServer, client: NimClient): void {
   // 2. Deep Reasoning & Architecture
   server.tool(
     "nim_deep_reason",
-    "Leverages NVIDIA large-scale reasoning models (Nemotron-3 Ultra 550B or Nemotron-3 Omni Reasoning) for deep system architecture, complex logic, and tradeoff analysis",
+    "Leverages NVIDIA large-scale reasoning models (Nemotron-3 Ultra 550B or Nemotron-3 Omni Reasoning) for deep system architecture, complex logic, and tradeoff analysis with automatic failover",
     {
       problem: z.string().describe("The core technical challenge, logical problem, or architectural dilemma to analyze."),
       context: z.string().optional().describe("Additional technical context, requirements, existing code, or constraints."),
@@ -57,8 +59,9 @@ export function registerNimTools(server: McpServer, client: NimClient): void {
         .enum(["ultra", "fast"])
         .optional()
         .describe("Reasoning mode: 'ultra' uses the 550B-parameter Nemotron Ultra; 'fast' uses Omni 30B Reasoning. Default: 'ultra'."),
+      enable_fallback: z.boolean().optional().describe("Whether to failover to sibling reasoning models if primary is unavailable. Default: true."),
     },
-    async ({ problem, context, mode }) => {
+    async ({ problem, context, mode, enable_fallback }) => {
       try {
         const selectedModel = mode === "fast" ? "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning" : "nvidia/nemotron-3-ultra-550b-a55b";
         const systemPrompt =
@@ -74,6 +77,7 @@ export function registerNimTools(server: McpServer, client: NimClient): void {
           systemPrompt,
           temperature: 0.1,
           maxTokens: 4096,
+          enableFallback: enable_fallback ?? true,
         });
         const elapsedMs = Date.now() - startTime;
 
@@ -89,7 +93,7 @@ export function registerNimTools(server: McpServer, client: NimClient): void {
   // 3. Specialized Code Review
   server.tool(
     "nim_review_code",
-    "Audits source code or git diffs using software engineering specialist models (Poolside Laguna XS or Mistral Large)",
+    "Audits source code or git diffs using software engineering specialist models (Poolside Laguna XS or Mistral Large) with automatic fallback",
     {
       code_or_diff: z.string().describe("Source code or git diff to audit."),
       language: z.string().optional().describe("Programming language (e.g. typescript, python, rust, go, bash, docker)."),
@@ -101,8 +105,9 @@ export function registerNimTools(server: McpServer, client: NimClient): void {
         .string()
         .optional()
         .describe("Model to use: 'code' (Poolside Laguna XS 2.1) or 'mistral' (Mistral Large 4). Default: 'code'."),
+      enable_fallback: z.boolean().optional().describe("Whether to failover if code model is unavailable. Default: true."),
     },
-    async ({ code_or_diff, language, focus, model }) => {
+    async ({ code_or_diff, language, focus, model, enable_fallback }) => {
       try {
         const resolved = resolveModel(model || "code");
         const focusStr = focus ? ` with primary focus on '${focus.replace(/_/g, " ")}'` : "";
@@ -116,6 +121,7 @@ export function registerNimTools(server: McpServer, client: NimClient): void {
           systemPrompt,
           temperature: 0.1,
           maxTokens: 4096,
+          enableFallback: enable_fallback ?? true,
         });
         const elapsedMs = Date.now() - startTime;
 
@@ -141,32 +147,52 @@ export function registerNimTools(server: McpServer, client: NimClient): void {
         .string()
         .optional()
         .describe("Multimodal model: 'vision' (Llama 3.2 90B Vision) or 'super-vl' (Nemotron Super VL 120B). Default: 'vision'."),
+      enable_fallback: z.boolean().optional().describe("Whether to failover to sibling vision model. Default: true."),
     },
-    async ({ image_url_or_path, prompt, model }) => {
+    async ({ image_url_or_path, prompt, model, enable_fallback }) => {
       try {
         const resolved = resolveModel(model || "vision");
         const resolvedImage = await resolveImageInput(image_url_or_path);
 
         const startTime = Date.now();
-        const response = await client.chatCompletion({
-          model: resolved,
-          messages: [
-            {
-              role: "user",
-              content: [
-                { type: "text", text: prompt },
-                { type: "image_url", image_url: { url: resolvedImage } },
-              ],
-            },
-          ],
-          temperature: 0.2,
-          max_tokens: 3000,
-        });
-        const elapsedMs = Date.now() - startTime;
+        const messages = [
+          {
+            role: "user" as const,
+            content: [
+              { type: "text" as const, text: prompt },
+              { type: "image_url" as const, image_url: { url: resolvedImage } },
+            ],
+          },
+        ];
 
-        const choiceText = response.choices?.[0]?.message?.content || "(No text generated)";
+        let choiceText = "";
+        let finalModel = resolved;
+
+        if (enable_fallback ?? true) {
+          const res = await client.chatCompletionWithFallback({
+            model: resolved,
+            messages,
+            temperature: 0.2,
+            max_tokens: 3000,
+          });
+          finalModel = res.modelUsed;
+          choiceText = res.response.choices?.[0]?.message?.content || "(No text generated)";
+          if (res.fallbackTriggered) {
+            choiceText = `> ⚠️ **[Vision Fallback]** Primary model \`${res.requestedModel}\` unavailable. Switched to \`${res.modelUsed}\`.\n\n${choiceText}`;
+          }
+        } else {
+          const res = await client.chatCompletion({
+            model: resolved,
+            messages,
+            temperature: 0.2,
+            max_tokens: 3000,
+          });
+          choiceText = res.choices?.[0]?.message?.content || "(No text generated)";
+        }
+
+        const elapsedMs = Date.now() - startTime;
         return formatTextToolResponse(
-          `### NVIDIA NIM Visual Analysis [${resolved}] (${elapsedMs}ms):\n\n${choiceText}`
+          `### NVIDIA NIM Visual Analysis [${finalModel}] (${elapsedMs}ms):\n\n${choiceText}`
         );
       } catch (err) {
         return formatToolError("Error during visual analysis", err);
@@ -177,15 +203,16 @@ export function registerNimTools(server: McpServer, client: NimClient): void {
   // 5. Document & Data Extraction
   server.tool(
     "nim_extract_document",
-    "Processes and structures raw dumps from PDFs, tables, unorganized notes, or OCR using Nemotron Parse 2.0",
+    "Processes and structures raw dumps from PDFs, tables, unorganized notes, or OCR using Nemotron Parse 2.0 with automatic failover",
     {
       raw_content: z.string().describe("Raw unformatted content, PDF text dump, or OCR to parse."),
       target_format: z
         .enum(["markdown", "json", "table"])
         .optional()
         .describe("Desired output format. Default: 'markdown'."),
+      enable_fallback: z.boolean().optional().describe("Whether to failover if parse model is unavailable. Default: true."),
     },
-    async ({ raw_content, target_format }) => {
+    async ({ raw_content, target_format, enable_fallback }) => {
       try {
         const resolved = resolveModel("parse");
         const format = target_format || "markdown";
@@ -197,6 +224,7 @@ export function registerNimTools(server: McpServer, client: NimClient): void {
           systemPrompt,
           temperature: 0.1,
           maxTokens: 4096,
+          enableFallback: enable_fallback ?? true,
         });
         const elapsedMs = Date.now() - startTime;
 
@@ -209,10 +237,53 @@ export function registerNimTools(server: McpServer, client: NimClient): void {
     }
   );
 
-  // 6. Server Telemetry & Status
+  // 6. Proactive Catalog Health Check
+  server.tool(
+    "nim_health_check",
+    "Runs diagnostic ping probes across homologated NVIDIA NIM models to detect entitlement changes, deprecations, or latency degradation",
+    {
+      models: z
+        .array(z.string())
+        .optional()
+        .describe("Optional list of specific model IDs or aliases to test. If omitted, tests all primary catalog models."),
+      timeout_ms: z.number().min(1000).max(30000).optional().describe("Timeout per probe in milliseconds. Default: 8000."),
+    },
+    async ({ models, timeout_ms }) => {
+      try {
+        const report = await client.probeCatalog(models);
+
+        const rows = report.results.map((r) => {
+          const icon = r.status === "healthy" ? "🟢 Healthy" : r.status === "degraded" ? "🟡 Degraded" : "🔴 Unavailable";
+          const fallback = MODEL_FALLBACK_CHAINS[r.model]?.[0] || "(none)";
+          const statusDetail = r.statusCode ? `HTTP ${r.statusCode}` : r.error?.slice(0, 40) || "-";
+          return `| \`${r.model}\` | ${icon} | ${statusDetail} | ${r.latencyMs}ms | \`${fallback}\` |`;
+        });
+
+        const markdown = [
+          `### 🏥 NVIDIA NIM Catalog Health Report (${report.timestamp})`,
+          "",
+          `**Summary:** ${report.healthyCount} Healthy | ${report.degradedCount} Degraded | ${report.unavailableCount} Unavailable (${report.totalTested} tested)`,
+          "",
+          "| Model ID | Status | Response | Latency | Fallback Target |",
+          "| :--- | :---: | :---: | :---: | :--- |",
+          ...rows,
+          "",
+          report.unavailableCount > 0
+            ? `> ⚠️ **Warning:** ${report.unavailableCount} model(s) are currently unavailable on your NVIDIA account. Any calls to these models will automatically failover via Fallback Chains.`
+            : "> ✅ **All tested endpoints are active and entitled.**",
+        ].join("\n");
+
+        return formatTextToolResponse(markdown);
+      } catch (err) {
+        return formatToolError("Error running health check", err);
+      }
+    }
+  );
+
+  // 7. Server Telemetry & Status
   server.tool(
     "nim_status",
-    "Reports rate limiting status (40 RPM quota), available slots, execution telemetry, and supported model catalog and aliases",
+    "Reports rate limiting status (40 RPM quota), available slots, execution telemetry, fallback chains, and supported models",
     {},
     async () => {
       try {
@@ -224,6 +295,7 @@ export function registerNimTools(server: McpServer, client: NimClient): void {
             statusDescription: `${rateLimit.currentRpm}/${rateLimit.limit} requests in the last 60s (${rateLimit.availableSlots} slots available)`,
           },
           telemetry,
+          fallbackChains: MODEL_FALLBACK_CHAINS,
           availableAliases: MODEL_ALIASES,
           supportedModels: KNOWN_MODELS,
         });
@@ -238,12 +310,24 @@ export function registerNimTools(server: McpServer, client: NimClient): void {
   // =========================================================================
 
   server.tool(
+    "nim_verificar_saude",
+    "Alias para nim_health_check (compatibilidade com versões anteriores)",
+    {
+      modelos: z.array(z.string()).optional(),
+    },
+    async ({ modelos }) => {
+      const report = await client.probeCatalog(modelos);
+      return formatJsonToolResponse(report);
+    }
+  );
+
+  server.tool(
     "nim_consultar_modelo",
     "Alias para nim_query_model (compatibilidade com versões anteriores)",
     {
-      prompt: z.string().describe("Mensagem ou pergunta."),
-      modelo: z.string().optional().describe("Nome ou alias do modelo."),
-      system_prompt: z.string().optional().describe("Prompt de sistema."),
+      prompt: z.string(),
+      modelo: z.string().optional(),
+      system_prompt: z.string().optional(),
       temperature: z.number().min(0).max(2).optional(),
       max_tokens: z.number().positive().max(16384).optional(),
     },
@@ -324,7 +408,7 @@ export function registerNimTools(server: McpServer, client: NimClient): void {
       const startTime = Date.now();
       try {
         const resolvedImage = await resolveImageInput(imagem_url_ou_arquivo);
-        const response = await client.chatCompletion({
+        const res = await client.chatCompletionWithFallback({
           model: resolved,
           messages: [
             {
@@ -336,8 +420,8 @@ export function registerNimTools(server: McpServer, client: NimClient): void {
             },
           ],
         });
-        const res = response.choices?.[0]?.message?.content || "";
-        return formatTextToolResponse(`### Análise Visual NIM [${resolved}] (${Date.now() - startTime}ms):\n\n${res}`);
+        const content = res.response.choices?.[0]?.message?.content || "";
+        return formatTextToolResponse(`### Análise Visual NIM [${res.modelUsed}] (${Date.now() - startTime}ms):\n\n${content}`);
       } catch (err) {
         return formatToolError("Erro na análise visual", err);
       }

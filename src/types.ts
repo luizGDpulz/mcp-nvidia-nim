@@ -15,7 +15,7 @@ export interface TextContentPart {
 export interface ImageUrlContentPart {
   type: "image_url";
   image_url: {
-    url: string; // http(s) URL ou data:image/...;base64,...
+    url: string; // http(s) URL or data:image/...;base64,...
   };
 }
 
@@ -63,6 +63,15 @@ export interface ChatCompletionResponse {
   usage?: ChatCompletionUsage;
 }
 
+export interface CompletionWithFallbackResult {
+  response: ChatCompletionResponse;
+  modelUsed: string;
+  requestedModel: string;
+  fallbackTriggered: boolean;
+  fallbackReason?: string;
+  attempts: Array<{ model: string; error?: string }>;
+}
+
 export interface NimModelItem {
   id: string;
   object: string;
@@ -73,4 +82,24 @@ export interface NimModelItem {
 export interface NimModelsListResponse {
   object: "list";
   data: NimModelItem[];
+}
+
+export type HealthStatus = "healthy" | "degraded" | "unavailable";
+
+export interface ModelHealthProbeResult {
+  model: string;
+  alias?: string;
+  status: HealthStatus;
+  statusCode?: number;
+  latencyMs: number;
+  error?: string;
+}
+
+export interface CatalogHealthReport {
+  timestamp: string;
+  totalTested: number;
+  healthyCount: number;
+  degradedCount: number;
+  unavailableCount: number;
+  results: ModelHealthProbeResult[];
 }
