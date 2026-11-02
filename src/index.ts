@@ -23,12 +23,18 @@ if (!apiKey) {
 const baseUrl = process.env.NVIDIA_BASE_URL || "https://integrate.api.nvidia.com/v1";
 const rateLimitRpm = parseInt(process.env.NVIDIA_RATE_LIMIT_RPM || "40", 10);
 const defaultModel = process.env.NVIDIA_DEFAULT_MODEL || "mistralai/mistral-large-4-1t-a52b";
+const healthCheckEnabled = process.env.NVIDIA_HEALTHCHECK_ENABLED !== "false";
+const minRpmReserve = parseInt(process.env.NVIDIA_MIN_RPM_RESERVE || "15", 10);
+const healthCheckCacheTtlMs = parseInt(process.env.NVIDIA_HEALTHCHECK_CACHE_TTL_MS || "600000", 10);
 
 const client = new NimClient({
   apiKey,
   baseUrl,
   rateLimitRpm,
   defaultModel,
+  healthCheckEnabled,
+  minRpmReserve,
+  healthCheckCacheTtlMs,
 });
 
 const server = new McpServer({

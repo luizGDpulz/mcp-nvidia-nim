@@ -245,12 +245,20 @@ export function registerNimTools(server: McpServer, client: NimClient): void {
       models: z
         .array(z.string())
         .optional()
-        .describe("Optional list of specific model IDs or aliases to test. If omitted, tests all primary catalog models."),
-      timeout_ms: z.number().min(1000).max(30000).optional().describe("Timeout per probe in milliseconds. Default: 8000."),
+        .describe("Optional list of specific model IDs or aliases to test. If omitted, tests essential catalog models."),
+      timeout_ms: z.number().min(1000).max(30000).optional().describe("Timeout per probe in milliseconds. Default: 6000."),
+      force: z
+        .boolean()
+        .optional()
+        .describe("Force live probe bypassing TTL cache and quota safety floor. Default: false."),
     },
-    async ({ models, timeout_ms }) => {
+    async ({ models, timeout_ms, force }) => {
       try {
-        const report = await client.probeCatalog(models);
+        const report = await client.probeCatalog({
+          models,
+          timeoutMs: timeout_ms,
+          force,
+        });
 
         const rows = report.results.map((r) => {
           const icon = r.status === "healthy" ? "🟢 Healthy" : r.status === "degraded" ? "🟡 Degraded" : "🔴 Unavailable";
@@ -259,9 +267,13 @@ export function registerNimTools(server: McpServer, client: NimClient): void {
           return `| \`${r.model}\` | ${icon} | ${statusDetail} | ${r.latencyMs}ms | \`${fallback}\` |`;
         });
 
+        const cacheBadge = report.fromCache ? " ⚡ *(Cached TTL Fresh)*" : " 🌐 *(Live Probe)*";
+        const quotaNotice = report.quotaMessage ? `> 🛡️ **Quota Guardrail:** ${report.quotaMessage}\n\n` : "";
+
         const markdown = [
-          `### 🏥 NVIDIA NIM Catalog Health Report (${report.timestamp})`,
+          `### 🏥 NVIDIA NIM Catalog Health Report (${report.timestamp})${cacheBadge}`,
           "",
+          quotaNotice,
           `**Summary:** ${report.healthyCount} Healthy | ${report.degradedCount} Degraded | ${report.unavailableCount} Unavailable (${report.totalTested} tested)`,
           "",
           "| Model ID | Status | Response | Latency | Fallback Target |",
@@ -271,7 +283,7 @@ export function registerNimTools(server: McpServer, client: NimClient): void {
           report.unavailableCount > 0
             ? `> ⚠️ **Warning:** ${report.unavailableCount} model(s) are currently unavailable on your NVIDIA account. Any calls to these models will automatically failover via Fallback Chains.`
             : "> ✅ **All tested endpoints are active and entitled.**",
-        ].join("\n");
+        ].filter(Boolean).join("\n");
 
         return formatTextToolResponse(markdown);
       } catch (err) {
@@ -289,11 +301,13 @@ export function registerNimTools(server: McpServer, client: NimClient): void {
       try {
         const rateLimit = client.getRateLimiterStatus();
         const telemetry = client.getTelemetry();
+        const quotaProtection = client.getProtectionConfig();
         return formatJsonToolResponse({
           rateLimit: {
             ...rateLimit,
             statusDescription: `${rateLimit.currentRpm}/${rateLimit.limit} requests in the last 60s (${rateLimit.availableSlots} slots available)`,
           },
+          quotaProtection,
           telemetry,
           fallbackChains: MODEL_FALLBACK_CHAINS,
           availableAliases: MODEL_ALIASES,
@@ -314,9 +328,13 @@ export function registerNimTools(server: McpServer, client: NimClient): void {
     "Alias para nim_health_check (compatibilidade com versões anteriores)",
     {
       modelos: z.array(z.string()).optional(),
+      forcar: z.boolean().optional().describe("Forçar teste em tempo real ignorando cache e reserva de quota. Padrão: false."),
     },
-    async ({ modelos }) => {
-      const report = await client.probeCatalog(modelos);
+    async ({ modelos, forcar }) => {
+      const report = await client.probeCatalog({
+        models: modelos,
+        force: forcar,
+      });
       return formatJsonToolResponse(report);
     }
   );

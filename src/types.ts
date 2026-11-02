@@ -3,6 +3,9 @@ export interface NimConfig {
   baseUrl: string;
   rateLimitRpm: number;
   defaultModel: string;
+  healthCheckEnabled?: boolean;
+  minRpmReserve?: number;
+  healthCheckCacheTtlMs?: number;
 }
 
 export type MessageRole = "system" | "user" | "assistant";
@@ -97,9 +100,12 @@ export interface ModelHealthProbeResult {
 
 export interface CatalogHealthReport {
   timestamp: string;
+  fromCache: boolean;
   totalTested: number;
   healthyCount: number;
   degradedCount: number;
   unavailableCount: number;
+  throttledDueToQuota?: boolean;
+  quotaMessage?: string;
   results: ModelHealthProbeResult[];
 }

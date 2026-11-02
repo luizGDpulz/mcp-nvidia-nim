@@ -34,6 +34,12 @@ export class NimClient {
   private readonly metrics: MetricsCollector;
   private readonly requestTimeoutMs: number;
 
+  // Quota & Health Check Protection settings
+  private readonly healthCheckEnabled: boolean;
+  private readonly minRpmReserve: number;
+  private readonly healthCheckCacheTtlMs: number;
+  private cachedHealthReport: CatalogHealthReport | null = null;
+
   constructor(config: NimConfig, options?: { requestTimeoutMs?: number }) {
     if (!config.apiKey || config.apiKey.trim() === "") {
       throw new NimClientError("NVIDIA API key is required.");
@@ -46,6 +52,14 @@ export class NimClient {
     const rpm = config.rateLimitRpm > 0 ? config.rateLimitRpm : 40;
     this.rateLimiter = new SlidingWindowRateLimiter({ maxRequests: rpm, windowMs: 60_000 });
     this.metrics = new MetricsCollector();
+
+    // Default protection settings:
+    // 1. healthCheckEnabled: true (can be disabled via env)
+    // 2. minRpmReserve: 15 slots floor (at least 15 slots reserved for real queries)
+    // 3. healthCheckCacheTtlMs: 10 minutes cache
+    this.healthCheckEnabled = config.healthCheckEnabled ?? true;
+    this.minRpmReserve = config.minRpmReserve ?? 15;
+    this.healthCheckCacheTtlMs = config.healthCheckCacheTtlMs ?? 10 * 60 * 1000;
   }
 
   public getRateLimiterStatus(): RateLimiterStatus {
@@ -54,6 +68,37 @@ export class NimClient {
 
   public getTelemetry(): TelemetrySummary {
     return this.metrics.getSummary();
+  }
+
+  public getProtectionConfig() {
+    return {
+      healthCheckEnabled: this.healthCheckEnabled,
+      minRpmReserve: this.minRpmReserve,
+      healthCheckCacheTtlMs: this.healthCheckCacheTtlMs,
+      hasCachedHealthReport: !!this.cachedHealthReport,
+    };
+  }
+
+  /**
+   * Passively updates health cache based on real traffic, requiring 0 extra synthetic probe requests.
+   */
+  private updatePassiveHealth(model: string, status: "healthy" | "unavailable", latencyMs: number, error?: string): void {
+    if (!this.cachedHealthReport) return;
+    const existing = this.cachedHealthReport.results.find((r) => r.model === model);
+    if (existing) {
+      existing.status = status;
+      existing.latencyMs = latencyMs;
+      existing.error = error;
+    } else {
+      this.cachedHealthReport.results.push({
+        model,
+        status,
+        latencyMs,
+        error,
+      });
+    }
+    this.cachedHealthReport.healthyCount = this.cachedHealthReport.results.filter((r) => r.status === "healthy").length;
+    this.cachedHealthReport.unavailableCount = this.cachedHealthReport.results.filter((r) => r.status === "unavailable").length;
   }
 
   public async listModels(): Promise<NimModelsListResponse> {
@@ -122,7 +167,9 @@ export class NimClient {
 
         if (response.ok) {
           const result = (await response.json()) as ChatCompletionResponse;
-          this.metrics.recordSuccess(model, Date.now() - startTime, result.usage?.total_tokens);
+          const latency = Date.now() - startTime;
+          this.metrics.recordSuccess(model, latency, result.usage?.total_tokens);
+          this.updatePassiveHealth(model, "healthy", latency);
           return result;
         }
 
@@ -150,7 +197,9 @@ export class NimClient {
           response.status,
           parsedError
         );
-        this.metrics.recordFailure(model, Date.now() - startTime, clientError);
+        const latency = Date.now() - startTime;
+        this.metrics.recordFailure(model, latency, clientError);
+        this.updatePassiveHealth(model, "unavailable", latency, clientError.message);
         throw clientError;
       } catch (err: unknown) {
         if (err instanceof NimClientError) {
@@ -161,8 +210,10 @@ export class NimClient {
           await new Promise((resolve) => setTimeout(resolve, 1500 * attempt));
           continue;
         }
+        const latency = Date.now() - startTime;
         const commError = new NimClientError(`NVIDIA NIM communication error: ${(err as Error).message}`);
-        this.metrics.recordFailure(model, Date.now() - startTime, commError);
+        this.metrics.recordFailure(model, latency, commError);
+        this.updatePassiveHealth(model, "unavailable", latency, commError.message);
         throw commError;
       }
     }
@@ -212,7 +263,7 @@ export class NimClient {
         const errMsg = (err as Error).message;
         attempts.push({ model: candidate, error: errMsg });
 
-        // If the error is not model-specific (e.g. rate limit after retries or auth error 401), fail immediately
+        // If auth error 401, fail immediately
         if (err instanceof NimClientError && err.statusCode === 401) {
           throw err;
         }
@@ -343,14 +394,98 @@ export class NimClient {
   }
 
   /**
-   * Runs diagnostic health probes across the known catalog models.
+   * Runs diagnostic health probes with Quota Reservation Protection and TTL caching.
    */
-  public async probeCatalog(models?: string[]): Promise<CatalogHealthReport> {
-    const targetModels = models && models.length > 0 ? models : Object.keys(KNOWN_MODELS);
+  public async probeCatalog(
+    optionsOrModels?:
+      | {
+          models?: string[];
+          force?: boolean;
+          timeoutMs?: number;
+        }
+      | string[]
+  ): Promise<CatalogHealthReport> {
+    const options = Array.isArray(optionsOrModels)
+      ? { models: optionsOrModels }
+      : optionsOrModels;
+    const force = options?.force ?? false;
+    const now = Date.now();
+
+    // 1. If health check probes are disabled via environment variable
+    if (!this.healthCheckEnabled) {
+      return {
+        timestamp: new Date().toISOString(),
+        fromCache: false,
+        totalTested: 0,
+        healthyCount: 0,
+        degradedCount: 0,
+        unavailableCount: 0,
+        throttledDueToQuota: true,
+        quotaMessage: "Synthetic healthcheck probes are disabled via NVIDIA_HEALTHCHECK_ENABLED=false to strictly conserve RPM.",
+        results: [],
+      };
+    }
+
+    // 2. Return cached report if still fresh and not forced
+    if (
+      !force &&
+      this.cachedHealthReport &&
+      now - new Date(this.cachedHealthReport.timestamp).getTime() < this.healthCheckCacheTtlMs
+    ) {
+      return {
+        ...this.cachedHealthReport,
+        fromCache: true,
+      };
+    }
+
+    // 3. Quota Safety Floor (Circuit Breaker)
+    // If available slots in the current 60s window are below minRpmReserve, abort synthetic probes to prevent starving real work
+    const rateStatus = this.rateLimiter.getStatus();
+    if (!force && rateStatus.availableSlots < this.minRpmReserve) {
+      if (this.cachedHealthReport) {
+        return {
+          ...this.cachedHealthReport,
+          fromCache: true,
+          throttledDueToQuota: true,
+          quotaMessage: `Synthetic probes throttled to protect workload: only ${rateStatus.availableSlots} slots available (reserve floor: ${this.minRpmReserve}). Returning latest cached health status.`,
+        };
+      }
+
+      return {
+        timestamp: new Date().toISOString(),
+        fromCache: false,
+        totalTested: 0,
+        healthyCount: 0,
+        degradedCount: 0,
+        unavailableCount: 0,
+        throttledDueToQuota: true,
+        quotaMessage: `Synthetic probes throttled to protect workload: only ${rateStatus.availableSlots} slots available (reserve floor: ${this.minRpmReserve}). Real requests have full priority.`,
+        results: [],
+      };
+    }
+
+    // 4. Default to key essential models rather than the entire 15+ catalog to keep quota consumption minimal
+    const defaultEssentialModels = [
+      "mistralai/mistral-large-4-1t-a52b",
+      "nvidia/nemotron-3-ultra-550b-a55b",
+      "poolside/laguna-xs-2.1",
+      "meta/llama-3.2-90b-vision-instruct",
+    ];
+
+    const targetModels =
+      options?.models && options.models.length > 0
+        ? options.models.map((m) => resolveModel(m))
+        : defaultEssentialModels;
+
     const results: ModelHealthProbeResult[] = [];
+    const timeoutMs = options?.timeoutMs ?? 6000;
 
     for (const m of targetModels) {
-      const result = await this.probeModel(m);
+      // Re-check safety floor before each probe in case concurrent requests arrived
+      if (!force && this.rateLimiter.getStatus().availableSlots < this.minRpmReserve) {
+        break;
+      }
+      const result = await this.probeModel(m, timeoutMs);
       results.push(result);
     }
 
@@ -358,13 +493,17 @@ export class NimClient {
     const degradedCount = results.filter((r) => r.status === "degraded").length;
     const unavailableCount = results.filter((r) => r.status === "unavailable").length;
 
-    return {
+    const report: CatalogHealthReport = {
       timestamp: new Date().toISOString(),
+      fromCache: false,
       totalTested: results.length,
       healthyCount,
       degradedCount,
       unavailableCount,
       results,
     };
+
+    this.cachedHealthReport = report;
+    return report;
   }
 }
